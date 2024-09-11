@@ -1,0 +1,32 @@
+Here's a work-around for the low quality /snap.jpg issue if you want to keep scripting full size images using a linux device from command line:
+
+Go to the Protect WebUI > Devices > Camera you want > Settings > Advanced and Enable high-quality RTSP stream, it will create a link you can click on to copy and save.
+
+Make sure ffmpeg is installed on the Linux instance/device:
+
+apt-get install ffmpeg
+
+Create a bash script with the following (you can delete the comments except the first line):
+
+#!/bin/bash
+
+#get current time as variable, change TZ to local timezone or delete for UTC
+current_time=$(TZ=America/Chicago date "+%Y.%m.%d-%H.%M")
+
+rtsps://10.20.20.165:7441/1f2fFuesZjxPJWwm?enableSrtp
+
+#connect to stream with link from ui protect and save screenshot to path with current YYYY.MM.DD-HH.MM.jpg
+ffmpeg -rtsp_transport tcp -i LINK_PASTED_FROM_UI_PROTECT_SETTINGS -frames:v 1 -update 1 /path/to/snapshots/$current_time.jpg
+
+Then you just need to set up a cron job to run the script at desired intervals, use chronguru to help format it https://crontab.guru/
+
+crontab -e (-e for edit)
+
+Mine looked like this to have it save a snapshot every 10 minutes of the hour (change path to script)
+
+0,10,20,30,40,50 * * * * /bin/bash /path/to/your/script.sh
+
+You can confirm it's set by running crontab -l
+
+Modified from this guide which also explains how to combine all the jpgs into a mov file using the same ffmpeg program: https://www.rafaelsampaio.net/tech/create-a-timelapse-with-unifi-and-ffmpeg/
+sfghjsfg
