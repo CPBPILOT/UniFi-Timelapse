@@ -10,7 +10,7 @@ DATE_EXT=`date '+%F %H:%M'`
 declare -A CAMS
 
 # Add cameras to the CAMS array
-CAMS["REAR_LOT"]="rtsps://10.20.20.165:7441/1f2fFuesZjxPJWwm?enableSrtp"
+CAMS["REAR_LOT"]="rtsps://10.20.20.167:7441/3DIxsZuApyyKa9iO?enableSrtp"
 
 # Enable verbose output if running in a terminal
 if [[ -z $VERBOSE && -t 1 ]]; then
