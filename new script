@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Base directory for snapshots
-#SNAP_BASE="/nas/data/Development/UniFi/TimeLapse/UniFi-Timelapse/UniFi-Snaps"
-SNAP_BASE="/home/cbourque"
+SNAP_BASE="/home/cbourque/test"
+# "/nas/data/Development/UniFi/TimeLapse/UniFi-Timelapse/UniFi-Snaps"
 OUT_DIR="$SNAP_BASE/timelapse"
 DATE_EXT=`date '+%F %H:%M'`
 
@@ -10,7 +10,7 @@ DATE_EXT=`date '+%F %H:%M'`
 declare -A CAMS
 
 # Add cameras to the CAMS array
-CAMS["Front Door"]="rtsps://10.20.20.165:7441/1f2fFuesZjxPJWwm?enableSrtp"
+CAMS["REAR_LOT"]="rtsps://10.20.20.165:7441/1f2fFuesZjxPJWwm?enableSrtp"
 
 # Enable verbose output if running in a terminal
 if [[ -z $VERBOSE && -t 1 ]]; then
@@ -46,12 +46,16 @@ getSnap() {
     # check error here
   fi
   
-  snapFile="$snapDir/$1 - $DATE_EXT.jpg"
+  snapFile="$snapDir/$1 - $DATE_EXT.png"
 
-  log savingSnap "$2" to "$snapFile" 
+  log savingSnap "$2" to "$snapFile"
+
+ # Remove images older than 360 days
+  log "Removing images older than 360 days in $snapDir"
+  find "$snapDir" -type f -name "*.png" -mtime +360 -exec rm {} \; 
 
   # Capture the snapshot using ffmpeg
-  ffmpeg -rtsp_transport tcp -i "$2" -frames:v 1 -update 1 $snapFile
+  ffmpeg -rtsp_transport tcp -i "$2" -frames:v 1 -update 1 "$snapFile"
 }
 
 # Function to create a timelapse video from snapshots
@@ -108,7 +112,7 @@ createMovie()
   outfile="$OUT_DIR/$1 - $DATE_EXT.mp4"
 
   # Create the video using ffmpeg
-  ffmpeg -r 15 -start_number 1 -i "$snapTemp/"%06d.jpg -c:v libx264 -preset slow -crf 18 -pix_fmt yuv420p "$outfile" -hide_banner -loglevel panic
+  ffmpeg -r 24 -start_number 1 -i "$snapTemp/"%06d.jpg -c:v libx264 -preset slow -crf 18 -pix_fmt yuv420p "$outfile" -hide_banner -loglevel panic
 
   log "Created $outfile"
 
