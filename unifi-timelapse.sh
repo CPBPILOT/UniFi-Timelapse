@@ -6,11 +6,11 @@ OUT_DIR="$SNAP_BASE/timelapse"
 DATE_EXT=`date '+%F %H:%M'`
 
 declare -A CAMS
-
-CAMS["Front Door"]="http://192.1.1.1/snap.jpeg"
-CAMS["Back Door"]="http://192.1.1.2/snap.jpeg"
-CAMS["Driveway"]="http://192.1.1.3/snap.jpeg"
-CAMS["Back Garden"]="http://192.1.1.4/snap.jpeg"
+#Go to the Protect WebUI > Devices > Camera you want > Settings > Advanced and Enable high-quality RTSP stream, it will create a link you can click on to copy and save.
+CAMS["Front Door"]="rtsps://10.20.20.165:7441/1f2fFuesZjxPJWwm?enableSrtp"
+#CAMS["Back Door"]="http://192.1.1.2/snap.jpeg"
+#CAMS["Driveway"]="http://192.1.1.3/snap.jpeg"
+#CAMS["Back Garden"]="http://192.1.1.4/snap.jpeg"
 
 # If we are in a terminal, be verbose.
 if [[ -z $VERBOSE && -t 1 ]]; then
@@ -47,7 +47,8 @@ getSnap() {
 
   log savingSnap "$2" to "$snapFile" 
 
-  wget --quiet -O "$snapFile" "$2"
+  #wget --quiet -O "$snapFile" "$2"
+  ffmpeg -rtsp_transport tcp -i LINK_PASTED_FROM_UI_PROTECT_SETTINGS -frames:v 1 -update 1 $snapFile
 }
 
 createMovie()
