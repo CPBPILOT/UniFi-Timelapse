@@ -1,32 +1,145 @@
-Here's a work-around for the low quality /snap.jpg issue if you want to keep scripting full size images using a linux device from command line:
-
-Go to the Protect WebUI > Devices > Camera you want > Settings > Advanced and Enable high-quality RTSP stream, it will create a link you can click on to copy and save.
-
-Make sure ffmpeg is installed on the Linux instance/device:
-
-apt-get install ffmpeg
-
-Create a bash script with the following (you can delete the comments except the first line):
-
 #!/bin/bash
 
-#get current time as variable, change TZ to local timezone or delete for UTC
-current_time=$(TZ=America/Chicago date "+%Y.%m.%d-%H.%M")
+# Base directory for snapshots
+SNAP_BASE="/nas/data/Development/UniFi/TimeLapse/UniFi-Timelapse/UniFi-Snaps"
+OUT_DIR="$SNAP_BASE/timelapse"
+DATE_EXT=`date '+%F %H:%M'`
 
-rtsps://10.20.20.165:7441/1f2fFuesZjxPJWwm?enableSrtp
+# Associative array to store camera names and their RTSP URLs
+declare -A CAMS
 
-#connect to stream with link from ui protect and save screenshot to path with current YYYY.MM.DD-HH.MM.jpg
-ffmpeg -rtsp_transport tcp -i LINK_PASTED_FROM_UI_PROTECT_SETTINGS -frames:v 1 -update 1 /path/to/snapshots/$current_time.jpg
+# Add cameras to the CAMS array
+CAMS["Front Door"]="rtsps://10.20.20.165:7441/1f2fFuesZjxPJWwm?enableSrtp"
 
-Then you just need to set up a cron job to run the script at desired intervals, use chronguru to help format it https://crontab.guru/
+# Enable verbose output if running in a terminal
+if [[ -z $VERBOSE && -t 1 ]]; then
+  VERBOSE=1
+fi
 
-crontab -e (-e for edit)
+# Function to log messages to stdout if verbose mode is enabled
+log()
+{
+  if [ ! -z $VERBOSE ]; then echo "$@"; fi
+}
 
-Mine looked like this to have it save a snapshot every 10 minutes of the hour (change path to script)
+# Function to log error messages to stderr
+logerr() 
+{ 
+  echo "$@" 1>&2; 
+}
 
-0,10,20,30,40,50 * * * * /bin/bash /path/to/your/script.sh
+# Function to create a directory if it doesn't exist
+createDir()
+{
+  if [ ! -d "$1" ]; then
+    mkdir "$1"
+    # check error here
+  fi  
+}
 
-You can confirm it's set by running crontab -l
+# Function to capture a snapshot from a camera
+getSnap() {
+  snapDir="$SNAP_BASE/$1"
+  if [ ! -d "$snapDir" ]; then
+    mkdir -p "$snapDir"
+    # check error here
+  fi
+  
+  snapFile="$snapDir/$1 - $DATE_EXT.jpg"
 
-Modified from this guide which also explains how to combine all the jpgs into a mov file using the same ffmpeg program: https://www.rafaelsampaio.net/tech/create-a-timelapse-with-unifi-and-ffmpeg/
-sfghjsfg
+  log savingSnap "$2" to "$snapFile" 
+
+  # Capture the snapshot using ffmpeg
+  ffmpeg -rtsp_transport tcp -i "$2" -frames:v 1 -update 1 $snapFile
+}
+
+# Function to create a timelapse video from snapshots
+createMovie()
+{
+  snapDir="$SNAP_BASE/$1"
+  snapTemp="$snapDir/temp-$DATE_EXT"
+  snapFileList="$snapDir/temp-$DATE_EXT/files.list"
+  
+  if [ ! -d "$snapDir" ]; then
+    logerr "Error: No media files in '$snapDir'"
+    exit 2
+  fi
+
+  createDir "$snapTemp"
+
+  # Determine which images to include based on the second parameter
+  if [ "$2" = "today" ]; then
+    log "Creating video of $1 from today's images"
+    ls "$snapDir/"*`date '+%F'`*.jpg | sort > "$snapFileList"
+  elif [ "$2" = "yesterday" ]; then
+    log "Creating video of $1 from yesterday's images"
+    ls "$snapDir/"*`date '+%F' -d "1 day ago"`*.jpg | sort > "$snapFileList"
+  elif [ "$2" = "file" ]; then
+    if [ ! -f "$3" ]; then
+      logerr "ERROR: File '$3' not found"
+      exit 1
+    fi
+    log "Creating video of $1 from images in $3"
+    cp "$3" "$snapFileList"
+  else
+    log "Creating video of $1 from all images"
+    ls "$snapDir/"*.jpg | sort > "$snapFileList"
+  fi
+
+  # Change to the temporary directory
+  cwd=`pwd`
+  cd "$snapTemp"
+  x=1
+
+  # Create sequentially numbered symlinks to the images
+  while IFS= read -r file; do
+    counter=$(printf %06d $x)
+    ln -s "../`basename "$file"`" "./$counter.jpg"
+    x=$(($x+1))
+  done < "$snapFileList"
+
+  if [ $x -eq 1 ]; then
+    logerr "ERROR: No files found"
+    exit 2
+  fi
+
+  createDir "$OUT_DIR"
+  outfile="$OUT_DIR/$1 - $DATE_EXT.mp4"
+
+  # Create the video using ffmpeg
+  ffmpeg -r 15 -start_number 1 -i "$snapTemp/"%06d.jpg -c:v libx264 -preset slow -crf 18 -pix_fmt yuv420p "$outfile" -hide_banner -loglevel panic
+
+  log "Created $outfile"
+
+  # Clean up temporary files
+  cd $cwd
+  rm -rf "$snapTemp"
+}
+
+# Command-line argument handling
+case $1 in
+  # Saves snapshots for specified cameras
+  savesnap)
+    for ((i = 2; i <= $#; i++ )); do
+      if [ -z "${CAMS[${!i}]}" ]; then
+        logerr "ERROR: Can't find camera '${!i}'"
+      else
+        getSnap "${!i}" "${CAMS[${!i}]}"
+      fi
+    done
+  ;;
+
+  # Creates timelapse video
+  createvideo)
+    createMovie "${2}" "${3}" "${4}"
+  ;;
+
+  # Default case for invalid arguments
+  *)
+    logerr "Usage:"
+    logerr "$0 savesnap \"camera name\""
+    logerr "$0 createvideo \"camera name\" [today|yesterday|all|file filename]"
+  ;;
+
+esac
+
