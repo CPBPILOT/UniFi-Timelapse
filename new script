@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Base directory for snapshots
-SNAP_BASE="/home/cbourque/test"
+SNAP_BASE="/home/cbourque/auto_timelapse"
 # "/nas/data/Development/UniFi/TimeLapse/UniFi-Timelapse/UniFi-Snaps"
 OUT_DIR="$SNAP_BASE/timelapse"
 DATE_EXT=`date '+%F %H:%M'`
@@ -46,13 +46,13 @@ getSnap() {
     # check error here
   fi
   
-  snapFile="$snapDir/$1 - $DATE_EXT.png"
+  snapFile="$snapDir/$1 - $DATE_EXT.jpg"
 
   log savingSnap "$2" to "$snapFile"
 
  # Remove images older than 360 days
   log "Removing images older than 360 days in $snapDir"
-  find "$snapDir" -type f -name "*.png" -mtime +360 -exec rm {} \; 
+  find "$snapDir" -type f -name "*.jpg" -mtime +360 -exec rm {} \; 
 
   # Capture the snapshot using ffmpeg
   ffmpeg -rtsp_transport tcp -i "$2" -frames:v 1 -update 1 "$snapFile"
