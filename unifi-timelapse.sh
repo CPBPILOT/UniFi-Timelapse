@@ -1,32 +1,35 @@
 #!/bin/bash
 
-#SNAP_BASE="/mnt/hgfs/Disk2/UniFi-Snaps"
-SNAP_BASE="/nas/data/Development/UniFi/TimeLapse/UniFi-Timelapse/UniFi-Snaps"
+# Base directory for snapshots
+SNAP_BASE="/home/cbourque/test"
+# "/nas/data/Development/UniFi/TimeLapse/UniFi-Timelapse/UniFi-Snaps"
 OUT_DIR="$SNAP_BASE/timelapse"
 DATE_EXT=`date '+%F %H:%M'`
 
+# Associative array to store camera names and their RTSP URLs
 declare -A CAMS
 
-CAMS["Front Door"]="http://192.1.1.1/snap.jpeg"
-CAMS["Back Door"]="http://192.1.1.2/snap.jpeg"
-CAMS["Driveway"]="http://192.1.1.3/snap.jpeg"
-CAMS["Back Garden"]="http://192.1.1.4/snap.jpeg"
+# Add cameras to the CAMS array
+CAMS["REAR_LOT"]="rtsps://10.20.20.165:7441/1f2fFuesZjxPJWwm?enableSrtp"
 
-# If we are in a terminal, be verbose.
+# Enable verbose output if running in a terminal
 if [[ -z $VERBOSE && -t 1 ]]; then
   VERBOSE=1
 fi
 
+# Function to log messages to stdout if verbose mode is enabled
 log()
 {
   if [ ! -z $VERBOSE ]; then echo "$@"; fi
 }
 
+# Function to log error messages to stderr
 logerr() 
 { 
   echo "$@" 1>&2; 
 }
 
+# Function to create a directory if it doesn't exist
 createDir()
 {
   if [ ! -d "$1" ]; then
@@ -35,21 +38,27 @@ createDir()
   fi  
 }
 
+# Function to capture a snapshot from a camera
 getSnap() {
-
   snapDir="$SNAP_BASE/$1"
   if [ ! -d "$snapDir" ]; then
     mkdir -p "$snapDir"
     # check error here
   fi
   
-  snapFile="$snapDir/$1 - $DATE_EXT.jpg"
+  snapFile="$snapDir/$1 - $DATE_EXT.png"
 
-  log savingSnap "$2" to "$snapFile" 
+  log savingSnap "$2" to "$snapFile"
 
-  wget --quiet -O "$snapFile" "$2"
+ # Remove images older than 360 days
+  log "Removing images older than 360 days in $snapDir"
+  find "$snapDir" -type f -name "*.png" -mtime +360 -exec rm {} \; 
+
+  # Capture the snapshot using ffmpeg
+  ffmpeg -rtsp_transport tcp -i "$2" -frames:v 1 -update 1 "$snapFile"
 }
 
+# Function to create a timelapse video from snapshots
 createMovie()
 {
   snapDir="$SNAP_BASE/$1"
@@ -57,12 +66,13 @@ createMovie()
   snapFileList="$snapDir/temp-$DATE_EXT/files.list"
   
   if [ ! -d "$snapDir" ]; then
-    logedd "Error : No media files in '$snapDir'"
+    logerr "Error: No media files in '$snapDir'"
     exit 2
   fi
 
   createDir "$snapTemp"
 
+  # Determine which images to include based on the second parameter
   if [ "$2" = "today" ]; then
     log "Creating video of $1 from today's images"
     ls "$snapDir/"*`date '+%F'`*.jpg | sort > "$snapFileList"
@@ -71,69 +81,70 @@ createMovie()
     ls "$snapDir/"*`date '+%F' -d "1 day ago"`*.jpg | sort > "$snapFileList"
   elif [ "$2" = "file" ]; then
     if [ ! -f "$3" ]; then
-      logerr "ERROR file '$3' not found"
+      logerr "ERROR: File '$3' not found"
       exit 1
     fi
     log "Creating video of $1 from images in $3"
     cp "$3" "$snapFileList"
   else
     log "Creating video of $1 from all images"
-    `ls "$snapDir/"*.jpg | sort > "$snapFileList"`
+    ls "$snapDir/"*.jpg | sort > "$snapFileList"
   fi
 
-  # need to chance current dir so links work over network mounts
+  # Change to the temporary directory
   cwd=`pwd`
   cd "$snapTemp"
   x=1
-  #for file in $snapSearch; do
+
+  # Create sequentially numbered symlinks to the images
   while IFS= read -r file; do
     counter=$(printf %06d $x)
     ln -s "../`basename "$file"`" "./$counter.jpg"
     x=$(($x+1))
   done < "$snapFileList"
-  #done
 
   if [ $x -eq 1 ]; then
-    logerr "ERROR no files found"
+    logerr "ERROR: No files found"
     exit 2
   fi
 
   createDir "$OUT_DIR"
   outfile="$OUT_DIR/$1 - $DATE_EXT.mp4"
 
-  ffmpeg -r 15 -start_number 1 -i "$snapTemp/"%06d.jpg -c:v libx264 -preset slow -crf 18 -c:a copy -pix_fmt yuv420p "$outfile" -hide_banner -loglevel panic
+  # Create the video using ffmpeg
+  ffmpeg -r 24 -start_number 1 -i "$snapTemp/"%06d.jpg -c:v libx264 -preset slow -crf 18 -pix_fmt yuv420p "$outfile" -hide_banner -loglevel panic
 
   log "Created $outfile"
 
+  # Clean up temporary files
   cd $cwd
   rm -rf "$snapTemp"
-  
 }
 
-
+# Command-line argument handling
 case $1 in
+  # Saves snapshots for specified cameras
   savesnap)
     for ((i = 2; i <= $#; i++ )); do
       if [ -z "${CAMS[${!i}]}" ]; then
-        logerr "ERROR, can't find camera '${!i}'"
+        logerr "ERROR: Can't find camera '${!i}'"
       else
         getSnap "${!i}" "${CAMS[${!i}]}"
       fi
     done
   ;;
 
+  # Creates timelapse video
   createvideo)
     createMovie "${2}" "${3}" "${4}"
   ;;
 
+  # Default case for invalid arguments
   *)
-    logerr "Bad Args use :-"
+    logerr "Usage:"
     logerr "$0 savesnap \"camera name\""
-    logerr "$0 createvideo \"camera name\" today"
-    logerr "options (today|yesterday|all|filename)"
+    logerr "$0 createvideo \"camera name\" [today|yesterday|all|file filename]"
   ;;
 
 esac
-
-
 
